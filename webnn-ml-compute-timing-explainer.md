@@ -6,7 +6,7 @@
 
 ## Authors
 
-- Shubham Gupta (Servo)
+- Shubham Gupta (Huawei)
 
 ## Participate
 
@@ -19,15 +19,14 @@
 The web Performance Timeline and the specifications that extend it — Navigation Timing,
 Resource Timing, User Timing, Paint Timing, Event Timing, Long Tasks — define a rich set of
 capabilities for measuring the performance of a page, so that developers can monitor,
-understand, and improve user experience. WebNN is not part of that set: a page can run
-inference, and the platform offers no way to measure it. This document adds the compute side:
-two entry types carried by `MLComputeTiming`, registered with the Performance Timeline and
-created by the engine.
+understand, and improve user experience. 
+
+WebNN is now eligible to be part of that set: A page can run inference, and the platform offers no way to measure it. 
 
 - WebNN has no performance surface.
 - No timing. No attribution.
 - A page can time its own `dispatch()` call — but that number is not the computation.
-- Measured in Servo's face-detection demo (reference mobile device, NPU backend):
+- Folling Measured in Device's face-detection demo (in mobile device on NPU backend):
 
 | measurement | API field | how it was taken | value |
 |---|---|---|---|
@@ -40,9 +39,9 @@ Two problems:
 1. **The dispatch round trip is longer than the compute.** 5.85 ms vs 5.69 ms — 0.16 ms of async
    channel.
 2. **The page-timed number is not interoperable.** 209 ms, because completion requires a readback.
-   Engines plumb that path differently; the same page measures different quantities.
+   Different Engines plumb that path differently; the same page measures different quantities.
 
-The demo's 209 ms comes from this code (`face_detector.html`, `main()`):
+The demo's 209 ms comes from a Yolo-n8 Face Detection Model using following script logging
 
 ```js
 const start = performance.now();
@@ -59,15 +58,18 @@ console.log(`Inference: ${(performance.now() - start).toFixed(2)}ms (1 run) on $
 - The page cannot tell which part is compute.
 - `dispatch()` has no completion signal: *"callers can await the results of reading back the output tensors."*
 
-The fix:
+## Proposal
 
 - A uniform, **engine-defined** interval, interoperable by construction.
-- Home: the Performance Timeline.
+- Home: WebMAchineLearning Performance Timeline.
 - Principle: **inherit the plumbing, own the semantics.**
 
 ## Scope
 
-This document specifies **timing only**. It covers:
+This document adds the compute side benchmarking: `MLComputeTiming`
+- Registered with the Performance Timeline and populated by the engine.
+
+It covers:
 
 - `ml-compile` and `ml-compute`, carried by `MLComputeTiming`.
 - Both WebNN surfaces: the graph API and the Model Loader API.
