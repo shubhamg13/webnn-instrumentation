@@ -197,10 +197,12 @@ const bytes = await context.readTensor(outputTensor);
 
 ## Proposed Approach
 
-- A uniform, **engine-defined** interval, interoperable by construction.
-- Home: the Performance Timeline delivers the entries; WebNN owns the semantics; WebPerf
-  registers the entry types.
-- Principle: **inherit the plumbing, own the semantics.**
+A uniform, **engine-defined** interval, interoperable by construction. The Performance Timeline
+delivers the entries; WebNN owns the semantics; WebPerf registers the entry types. The principle:
+**inherit the plumbing, own the semantics.**
+
+The shape:
+
 - Two `PerformanceEntry` interfaces: `MLCompileTiming` and `MLComputeTiming`.
 - Two entry types: `ml-compile`, `ml-compute`.
 - Entries are engine-created at spec-defined completion points, never page-created.
