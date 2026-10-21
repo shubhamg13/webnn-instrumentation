@@ -6,7 +6,7 @@
 
 ## Authors
 
-- Shubham Gupta (Servo)
+- Shubham Gupta (Huawei)
 
 ## Participate
 
@@ -144,10 +144,15 @@ console.log(context.resourceCounts);      // { graphs: 0, tensors: 0 }
 
 ## Proposed Approach
 
+Two integers, owned by the page: the graphs and tensors a context holds. The home is a WebNN
+context attribute — no Performance Timeline registration, no new global. The principle: explicit
+release is deterministic, collection is explicitly out of contract.
+
+The shape:
+
 - A small dictionary of counts: `MLResourceCounts { graphs, tensors }`.
 - One attribute on the owning object: `MLContext.resourceCounts`.
 - Synchronous getter returning a snapshot.
-- Explicit release is deterministic; collection is explicitly out of contract.
 - Counts only: no bytes, no ids, no per-object data.
 - Covers the graph API; Model Loader models, if they carry resources, are an open question.
 
@@ -171,6 +176,8 @@ partial interface MLContext {
 - `resourceCounts` is a snapshot; mutating it does not affect the context.
 - `graphs` counts `MLGraph` objects owned by this context.
 - `tensors` counts `MLTensor` objects owned by this context, including constant tensors.
+- A resource counts from the moment its creation promise resolves — the moment the page can hold
+  the object; a pending `build()` or `createTensor()` is not counted.
 - Only script-visible objects count — not internal temporaries the implementation allocates.
 - `MLContext.destroy()` sets both counts to zero.
 - Unreachable-but-uncollected objects may still be counted; the count drops when the
@@ -182,6 +189,7 @@ partial interface MLContext {
 - `MLTensor.destroy()` — decrements `tensors` synchronously.
 - `MLGraph.destroy()` — decrements `graphs` synchronously.
 - `MLContext.destroy()` — both to zero.
+- Repeated `destroy()` — a no-op; a count never goes below zero.
 - GC collection — unspecified timing; the spec says only that collected objects stop counting.
 
 ### Dependencies on non-stable features
@@ -281,6 +289,10 @@ partial interface MLContext {
 3. Model Loader: do model objects appear in the counts?
 4. Getter, level-triggered event, or both?
 5. Any rate limiting for the GC-driven component? (Costs determinism.)
+6. Post-destroy reads: `resourceCounts` returns zeros on a destroyed context while other
+   operations are unavailable. Should it throw for consistency instead?
+7. Completeness: are two counts the complete minimum for a first draft, or does the group expect
+   bytes, per-type breakdowns or queue depth before review?
 
 ## References & acknowledgements
 
