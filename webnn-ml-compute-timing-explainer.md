@@ -19,9 +19,10 @@
 The web Performance Timeline and the specifications that extend it — Navigation Timing,
 Resource Timing, User Timing, Paint Timing, Event Timing, Long Tasks — define a rich set of
 capabilities for measuring the performance of a page, so that developers can monitor,
-understand, and improve user experience. 
+understand, and improve user experience.
 
-WebNN is now eligible to be part of that set: A page can run inference, and the platform offers no way to measure it. 
+WebNN is not yet part of that set: a page can run inference, and the platform offers no way to
+measure it.
 
 - WebNN has no performance surface.
 - No timing. No attribution.
@@ -60,12 +61,12 @@ console.log(`Inference: ${(performance.now() - start).toFixed(2)}ms (1 run) on $
 
 ## Scope
 
-This document adds the compute side benchmarking: `MLComputeTiming`
-- Registered with the Performance Timeline and populated by the engine.
+This document specifies the compute side of that measurement: `MLComputeTiming`, registered with
+the Performance Timeline and populated by the engine.
 
 It covers:
 
-- `ml-compile` and `ml-compute`, carried by `MLComputeTiming`.
+- `ml-compile` and `ml-compute`, carried by `MLCompileTiming` and `MLComputeTiming`.
 - Both WebNN surfaces: the graph API and the Model Loader API.
 - Engine-created entries, delivered through the Performance Timeline.
 
@@ -199,7 +200,7 @@ const bytes = await context.readTensor(outputTensor);
 - A uniform, **engine-defined** interval, interoperable by construction.
 - Home: the Performance Timeline (Web Performance WG).
 - Principle: **inherit the plumbing, own the semantics.**
-- One `PerformanceEntry` interface: `MLComputeTiming`.
+- Two `PerformanceEntry` interfaces: `MLCompileTiming` and `MLComputeTiming`.
 - Two entry types: `ml-compile`, `ml-compute`.
 - Entries are engine-created at spec-defined completion points, never page-created.
 - Delivered through the standard Timeline machinery.
@@ -208,9 +209,15 @@ const bytes = await context.readTensor(outputTensor);
 
 ## Detailed Design
 
-### `MLComputeTiming`
+### `MLCompileTiming` and `MLComputeTiming`
 
 ```webidl
+[Exposed=(Window,Worker)]
+interface MLCompileTiming : PerformanceEntry {
+  readonly attribute DOMHighResTimeStamp compileDuration;
+  [Default] object toJSON();
+};
+
 [Exposed=(Window,Worker)]
 interface MLComputeTiming : PerformanceEntry {
   readonly attribute DOMHighResTimeStamp computeDuration;
@@ -219,14 +226,16 @@ interface MLComputeTiming : PerformanceEntry {
 };
 ```
 
-- `name`, `startTime`, `duration`, `entryType` are inherited; not redeclared.
+- `name`, `startTime`, `duration`, `entryType` are inherited; not redeclared. Each interface adds
+  only its own fields.
 
 | entryType | created when | maxBufferSize |
 |---|---|---|
 | `ml-compile` | compilation completes, incl. weight preprocessing (`build()`, `load()`) | 50 |
 | `ml-compute` | one graph execution completes (`dispatch()`, `compute()`) | 150 |
 
-- Two types, one interface: different buffering, per-type subscription.
+- Two types, two interfaces: each carries only the fields that apply; buffering and subscription
+  are per type.
 - `availableFromTimeline: false` for both — observer-only, like LCP and Long Tasks.
 - `entryType` is the discriminator; no `kind` field.
 
@@ -237,23 +246,31 @@ the page also chooses input names and operator labels, and `MLGraph` exposes no 
 `name` is taken from the graph's first output and is shared by every entry for that graph —
 including every `ml-compute` from `dispatch()`, which runs the same graph.
 
-| field | meaning |
-|---|---|
-| `name` | the graph's name: the first output name in the `build(outputs)` record; shared by its compile and run entries; empty if there is none |
-| `startTime` / `duration` | submission → completion, `timeOrigin`-relative; includes queueing, dispatch, transfer |
-| `computeDuration` | the engine's compute interval; `≤ duration`; the remainder is not itemised |
-| `accelerated` | one bit; without it a 6 ms CPU run and a 6 ms NPU run look identical |
+| field | interface | meaning |
+|---|---|---|
+| `name` | both | the graph's name: the first output name in the `build(outputs)` record; shared by its compile and run entries; empty if there is none |
+| `startTime` / `duration` | both | submission → completion response, `timeOrigin`-relative; device-side queueing is inside, host-side time before submission is not |
+| `compileDuration` | `MLCompileTiming` | the engine's compilation interval: first compiler work → compiled program ready, including weight preprocessing; excludes queueing and hand-off; `≤ duration` |
+| `computeDuration` | `MLComputeTiming` | the engine's execution interval: first operation starts on the device → last completes; excludes device queueing and transfer; `≤ duration` |
+| `accelerated` | `MLComputeTiming` | one bit; without it a 6 ms CPU run and a 6 ms NPU run look identical |
+
+Submission is when the implementation sends the call (compile or execution) to the backend;
+completion is when it receives the response. The gap between `duration` and the engine's own
+interval is queueing and hand-off and is not itemised. `accelerated` describes where the run
+executed; compilation is not classified.
 
 ### Creation and delivery
 
 - `ml-compile` queued when the compile promise resolves (`build()`, `load()`).
 - Scope includes initialisation (weight preprocessing, possibly OS-cached).
-- An engine that defers compile to first execution must still attribute it — stated in the should-add algorithm.
+- An engine that defers work to first execution includes it in the first `ml-compute` entry's
+  `duration`; `computeDuration` covers only the device's execution.
 - `ml-compute` queued at execution completion, before/independently of readback — the completion signal the spec lacks.
 - Buffered per type up to `maxBufferSize`; delivered to `PerformanceObserver`.
-- Entry must redeclare `[Default] object toJSON()`.
+- Both interfaces redeclare `[Default] object toJSON()`.
 - Registry row per type: `entryType`, spec link, requester, `availableFromTimeline`, `maxBufferSize`, should-add algorithm.
-- The should-add algorithm hosts the normative definitions of `duration` and `computeDuration`.
+- The should-add algorithm hosts the normative definitions of `duration`, `compileDuration` and
+  `computeDuration`.
 
 ### Dependencies on non-stable features
 
@@ -271,13 +288,15 @@ including every `ml-compute` from `dispatch()`, which runs the same graph.
 
 ## Solving Goal 1: a uniform interval
 
-- Both entries start at submission and end at engine completion — same meaning in every engine.
+- Every entry starts when the implementation submits the call and ends when it receives the
+  completion response — same meaning in every engine.
 - The same two types cover graph API and Model Loader.
 - A benchmark written once compares across engines, backends and APIs.
 
 ## Solving Goal 2: attribution
 
-- `accelerated` is per entry, so a silent CPU fallback cannot pass for acceleration.
+- `accelerated` is on every `ml-compute` entry, so a silent CPU fallback cannot pass for
+  acceleration.
 - Bridges to `#934`: can stay boolean or align with policy strings without changing the entry shape.
 
 ## Alternatives considered
@@ -326,17 +345,21 @@ including every `ml-compute` from `dispatch()`, which runs the same graph.
 
 - No new attack surface: reads engine bookkeeping for the page's own objects.
 - No parsing of untrusted input (unlike a model loader).
-- Entries are scoped to the document that created the graph; no cross-origin channel.
+- Entries are scoped to the global (document or worker) that created the graph; no cross-origin
+  channel.
 
 ### Privacy considerations
 
 - Marginal disclosure is the core argument:
   - `duration` and `name` are page-equivalent or page-chosen.
-  - `computeDuration` is the one genuinely new signal — and where review pressure should land.
+  - `computeDuration` and `compileDuration` are the genuinely new signals — and where review
+    pressure should land.
 - No device identity: nothing reports vendor/architecture/model; one bit sits inside WebGPU's 32-configuration cap.
-- Per-document: iframe entries stay in the iframe; nothing aggregates upward.
+- Per global: document and worker entries stay where the graph was created; nothing aggregates
+  upward.
 - Coarse by construction: per-execution, small buffer, no per-op data.
-- `computeDuration` mitigation, if demanded: quantisation of the value (`duration` buckets of ≥10% of devices), or drop the field and ship `duration` only.
+- `computeDuration` / `compileDuration` mitigation, if demanded: quantise the value, with each
+  bucket covering at least 10% of devices, or drop the fields and ship `duration` only.
 - Already acknowledged: WebNN §5.2 invites input on execution-time fingerprinting; Model Loader names bucketing as the mitigation.
 - Levers, if demanded: rate limiting (Compute Pressure / `AudioPlaybackStats` style) or cross-origin isolation.
 - Circuit breaker: if any per-run timing is rejected, follow Compute Pressure and report outside the timeline; the companion counts API stands alone.
@@ -356,8 +379,11 @@ including every `ml-compute` from `dispatch()`, which runs the same graph.
 2. `accelerated`: boolean, or `#934` policy strings? Partial split?
 3. Transfers: `ml-transfer` entry, or fix `readTensor` ordering in WebNN first?
 4. `ml-compile` in draft 1, or second?
-5. `computeDuration`: normative, or `duration`-only fallback?
+5. `computeDuration` / `compileDuration`: normative, or `duration`-only fallback?
 6. Per-node attribution: split-the-graph only, or a separate opt-in profiling proposal?
+7. Failure and abort: is an entry created when `build()` rejects, `dispatch()` throws, execution
+   fails asynchronously, the context is lost mid-run, or the graph is destroyed while queued? If
+   so, with what field values?
 
 ## References & acknowledgements
 
