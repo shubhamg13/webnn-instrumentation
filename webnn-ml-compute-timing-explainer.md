@@ -26,7 +26,7 @@ WebNN is now eligible to be part of that set: A page can run inference, and the 
 - WebNN has no performance surface.
 - No timing. No attribution.
 - A page can time its own `dispatch()` call — but that number is not the computation.
-- Folling Measured in Device's face-detection demo (in mobile device on NPU backend):
+- Measured in a face-detection demo on a mobile device (NPU backend):
 
 | measurement | API field | how it was taken | value |
 |---|---|---|---|
@@ -39,9 +39,9 @@ Two problems:
 1. **The dispatch round trip is longer than the compute.** 5.85 ms vs 5.69 ms — 0.16 ms of async
    channel.
 2. **The page-timed number is not interoperable.** 209 ms, because completion requires a readback.
-   Different Engines plumb that path differently; the same page measures different quantities.
+   Different engines plumb that path differently; the same page measures different quantities.
 
-The demo's 209 ms comes from a Yolo-n8 Face Detection Model using following script logging
+The demo's 209 ms comes from a YOLOv8n face-detection model using the following logging code:
 
 ```js
 const start = performance.now();
@@ -57,12 +57,6 @@ console.log(`Inference: ${(performance.now() - start).toFixed(2)}ms (1 run) on $
 - Plus whatever the engine defers to first use.
 - The page cannot tell which part is compute.
 - `dispatch()` has no completion signal: *"callers can await the results of reading back the output tensors."*
-
-## Proposal
-
-- A uniform, **engine-defined** interval, interoperable by construction.
-- Home: WebMAchineLearning Performance Timeline.
-- Principle: **inherit the plumbing, own the semantics.**
 
 ## Scope
 
@@ -202,6 +196,9 @@ const bytes = await context.readTensor(outputTensor);
 
 ## Proposed Approach
 
+- A uniform, **engine-defined** interval, interoperable by construction.
+- Home: the Performance Timeline (Web Performance WG).
+- Principle: **inherit the plumbing, own the semantics.**
 - One `PerformanceEntry` interface: `MLComputeTiming`.
 - Two entry types: `ml-compile`, `ml-compute`.
 - Entries are engine-created at spec-defined completion points, never page-created.
