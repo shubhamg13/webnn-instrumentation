@@ -387,6 +387,9 @@ executed; compilation is not classified.
 7. Failure and abort: is an entry created when `build()` rejects, `dispatch()` throws, execution
    fails asynchronously, the context is lost mid-run, or the graph is destroyed while queued? If
    so, with what field values?
+8. Completeness: is compile timing, compute timing and one attribution bit the complete minimum
+   for a first draft, or does the group expect transfers, queue depth or run outcomes in scope
+   before review?
 
 ## References & acknowledgements
 
