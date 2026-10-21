@@ -198,7 +198,8 @@ const bytes = await context.readTensor(outputTensor);
 ## Proposed Approach
 
 - A uniform, **engine-defined** interval, interoperable by construction.
-- Home: the Performance Timeline (Web Performance WG).
+- Home: the Performance Timeline delivers the entries; WebNN owns the semantics; WebPerf
+  registers the entry types.
 - Principle: **inherit the plumbing, own the semantics.**
 - Two `PerformanceEntry` interfaces: `MLCompileTiming` and `MLComputeTiming`.
 - Two entry types: `ml-compile`, `ml-compute`.
